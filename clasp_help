@@ -1,0 +1,10 @@
+* -> The user is asked for the master password for the action to work.
+
+1. clasp init                           -   Initialize clasp by creating a master password (If a master password already exists prompt the user if he wants to change the master password)
+2. clasp add <service> <password>     -   Create a clasp entry for the given service with the given password
+3. clasp remove <service>                 -   Remove the clasp entry for the given service
+4. clasp modify <service> <new-password>  -   *Change the password for the given service
+5. clasp list                         -   List all the clasp entries with only the services
+6. clasp show <service>               -   *Copy the password the service to the clipboard (DONT PRINT IT ONTO THE CONSOLE)
+7. clasp output <file>                -   *Create a file to store the clasp entries
+
