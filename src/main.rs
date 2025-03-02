@@ -1,11 +1,13 @@
 mod crypto;
 
-use std::{fs, io, os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex, process::exit};
+use std::{fs, io, os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex};
+use crate::crypto::{hash_password, gen_salt};
 use lazy_static::lazy_static;
 use serde::Serialize;
 use rpassword::prompt_password;
 use clap::Parser;
 use rand::Rng;
+use base64::{Engine as _, engine::general_purpose};
 
 lazy_static! {
     pub static ref master_key: Mutex<String> = Mutex::new(String::from(""));
@@ -33,23 +35,25 @@ impl ClaspOptions {
         file_permissions.set_mode(0o600);
         fs::set_permissions(&file_path, file_permissions.clone()).unwrap();
 
-        let mut contents: String = String::from("");
+        let mut contents = Vec::new();
 
         //prompt the user for master key
         match prompt_password("Enter master key\n") {
             Ok(pass) => {
-                *mut_master_key = String::from(pass);
-
-                let mut hashed_key: String = String::new();
+                *mut_master_key = pass.clone();
 
                 let mut rng = rand::rng();
-                let salt_size: u64 = rng.random::<u64>();
+                let salt_size: u64 = rng.random_range(5..=9);
 
-                let salt = crypto::gen_salt(salt_size);
+                let salt = gen_salt(salt_size);
+                println!("salt: {}", salt);
 
-                crypto::hash_password::<sha2::Sha256>(&(*mut_master_key), salt.as_str(), &mut hashed_key);
+                let hashed_key = hash_password(&(*mut_master_key), salt.as_str());
+
+                let b64_hash_key = general_purpose::STANDARD.encode(hashed_key);
                 
-                contents = "master-key:".to_string() + &hashed_key;
+                contents.extend_from_slice("master_key:".as_bytes());
+                contents.extend_from_slice(b64_hash_key.as_bytes());
 
                 //writing the master key into the file
                 let _ = fs::write(&file_path, contents);
@@ -63,6 +67,10 @@ impl ClaspOptions {
 
         //write the master key to a file
         return Ok(());
+    }
+
+    fn add(service: Option<String>, password: Option<String>) -> io::Result<()> {
+        todo!();
     }
 }
 
@@ -78,11 +86,16 @@ fn main() {
         "init" => {
             let res: io::Result<()> = ClaspOptions::init();
             match res {
-                Ok(()) => println!("INFO: Initialization, master_key: {:?}", *master_key),
+                Ok(()) => println!("INFO: Initialization Complete"),
                 Err(e) => eprintln!("ERROR: {}", e),
             }
         },
-        "add" => println!("Action used is: init"),
+        "add" =>  {
+            match ClaspOptions::add(args.service, args.password) {
+                Ok(()) => println!("INFO: Added a new Entry"),
+                Err(e) => eprintln!("ERROR: Error adding a new entry\n{}", e),
+            } 
+        }       
         "remove" => println!("Action used is: init"),
         "modify" => println!("Action used is: init"),
         "list" => println!("Action used is: init"),
