@@ -1,9 +1,10 @@
 mod crypto;
 
-use std::{fs, io, os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex};
+use std::{fmt, fs::{self, OpenOptions}, io::{self, Write}, os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex};
 use crate::crypto::{hash_password, gen_salt};
 use lazy_static::lazy_static;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json;
 use rpassword::prompt_password;
 use clap::Parser;
 use rand::Rng;
@@ -11,6 +12,12 @@ use base64::{Engine as _, engine::general_purpose};
 
 lazy_static! {
     pub static ref master_key: Mutex<String> = Mutex::new(String::from(""));
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ClaspEntries {
+    service: String,
+    password: String,
 }
 
 #[derive(Debug, Parser)]
@@ -70,14 +77,58 @@ impl ClaspOptions {
     }
 
     fn add(service: Option<String>, password: Option<String>) -> io::Result<()> {
-        todo!();
-    }
-}
+        let mut entry = ClaspEntries {service: "".to_string(), password: "".to_string()};  
+        let mut not_found = false;
 
-#[derive(Debug, Serialize)]
-struct ClaspEntries {
-    service: String,
-    password: String,
+        match service {
+            Some(service) => {
+                entry.service = service; 
+            },
+            None => not_found = true,
+        }
+
+        match password {
+            Some(password) => {
+                //hash the password and store it in the json file
+                let mut rng = rand::rng();
+                let salt_size: u64 = rng.random_range(5..=9);
+
+                let salt = gen_salt(salt_size);
+                println!("salt: {}", salt);
+
+                let hashed_pass = hash_password(&(password.to_string()), salt.as_str());
+
+                let b64_hash_pass = general_purpose::STANDARD.encode(hashed_pass);
+                entry.password = b64_hash_pass; 
+            },
+            None => not_found = true,
+        }
+
+        if not_found {
+            eprintln!("ERROR:  Service or Password Not found.\nUSAGE: \n")
+        }
+
+        //allow the file write to append
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("./storage/creds.json")
+            .expect("ERROR: Failed to create or open a file\n");
+
+        //store entry into a json file with password hashed
+        let json_data = serde_json::to_string_pretty(&entry).expect("ERROR: Failed to convert struct to string");
+        //store the entry in a file 
+        
+        file.write_all(json_data.as_bytes())?;
+        let _ = file.write_all(b"\n")?;
+    
+        //println!("service: {}, password: {}", entry.service, entry.password);
+        Ok(())
+    }
+    
+    fn remove(service: Option<String>) -> io::Result<()>{
+        Ok(())
+    }
 }
 
 fn main() {
@@ -96,7 +147,12 @@ fn main() {
                 Err(e) => eprintln!("ERROR: Error adding a new entry\n{}", e),
             } 
         }       
-        "remove" => println!("Action used is: init"),
+        "remove" => {
+            match ClaspOptions::remove(args.service) {
+                Ok(()) => println!("INFO: Service removed succesfully"),
+                Err(e) => eprintln!("ERROR: Error removing a service\n{}", e),
+            }
+        },
         "modify" => println!("Action used is: init"),
         "list" => println!("Action used is: init"),
         "show" => println!("Action used is: init"),
