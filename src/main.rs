@@ -1,6 +1,6 @@
 mod crypto;
 
-use std::{fmt, fs::{self, OpenOptions}, io::{self, Write}, os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, fmt, fs::{self, OpenOptions}, io::{self, Write}, os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex};
 use crate::crypto::{hash_password, gen_salt};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -76,13 +76,15 @@ impl ClaspOptions {
         return Ok(());
     }
 
-    fn add(service: Option<String>, password: Option<String>) -> io::Result<()> {
+    fn add(service: Option<String>, password: Option<String>) -> io::Result<ClaspEntries> {
         let mut entry = ClaspEntries {service: "".to_string(), password: "".to_string()};  
+        let mut user_entry = ClaspEntries {service: "".to_string(), password: "".to_string()};  
         let mut not_found = false;
 
         match service {
             Some(service) => {
-                entry.service = service; 
+                entry.service = service.clone(); 
+                user_entry.service = service;
             },
             None => not_found = true,
         }
@@ -99,6 +101,7 @@ impl ClaspOptions {
                 let hashed_pass = hash_password(&(password.to_string()), salt.as_str());
 
                 let b64_hash_pass = general_purpose::STANDARD.encode(hashed_pass);
+                user_entry.password = password;
                 entry.password = b64_hash_pass; 
             },
             None => not_found = true,
@@ -123,16 +126,20 @@ impl ClaspOptions {
         let _ = file.write_all(b"\n")?;
     
         //println!("service: {}, password: {}", entry.service, entry.password);
-        Ok(())
+        Ok(user_entry)
     }
     
-    fn remove(service: Option<String>) -> io::Result<()>{
+    fn display(user_entries: &HashMap<&String, &String>) -> io::Result<()>{
+        for (key, value) in user_entries.iter() {
+            println!("Service: {}\nPassword:{}\n", key, value);
+        }
         Ok(())
     }
 }
 
 fn main() {
     let args = ClaspOptions::parse();
+    let mut user_entries = HashMap::new(); 
     match args.action.as_str() {
         "init" => {
             let res: io::Result<()> = ClaspOptions::init();
@@ -143,16 +150,25 @@ fn main() {
         },
         "add" =>  {
             match ClaspOptions::add(args.service, args.password) {
-                Ok(()) => println!("INFO: Added a new Entry"),
+                Ok(user_entry) => {
+                    user_entries.insert(&user_entry.service, &user_entry.password);
+                    println!("INFO: Added a new Entry\nEntry: {} : {}", user_entry.service, user_entry.password);
+                },
                 Err(e) => eprintln!("ERROR: Error adding a new entry\n{}", e),
             } 
         }       
         "remove" => {
-            match ClaspOptions::remove(args.service) {
-                Ok(()) => println!("INFO: Service removed succesfully"),
-                Err(e) => eprintln!("ERROR: Error removing a service\n{}", e),
-            }
+            //match ClaspOptions::remove(args.service) {
+            //    Ok(()) => println!("INFO: Service removed succesfully"),
+            //    Err(e) => eprintln!("ERROR: Error removing a service\n{}", e),
+            //}
         },
+        "display" => {
+            match ClaspOptions::display(&user_entries) {
+                Ok(()) => println!("INFO: succesfull"),
+                Err(e) => eprintln!("ERROR: Error\n{}", e),
+            }
+        }
         "modify" => println!("Action used is: init"),
         "list" => println!("Action used is: init"),
         "show" => println!("Action used is: init"),
